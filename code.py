@@ -211,6 +211,8 @@ if st.sidebar.button("Forward Backtesting"):
     st.experimental_set_query_params(page="ForwardBacktesting")
 if st.sidebar.button("Vanilla Options Payoff Simulator"):
     st.experimental_set_query_params(page="VanillaOptionsPayoffSimulator")
+if st.sidebar.button("Hedging with Options Strategy"):
+    st.experimental_set_query_params(page="HedgingWithOptions")
 
 # Determine which page to show based on the query parameter
 query_params = st.experimental_get_query_params()
@@ -358,3 +360,77 @@ elif page == "VanillaOptionsPayoffSimulator":
     # Handle reset action
     if st.button("Reset All Options"):
         st.session_state.options_data = pd.DataFrame(columns=['Type', 'Position', 'Strike Price', 'Premium', 'Volatility', 'Maturity', 'Risk-Free Rate'])
+
+# Add a new page to your Streamlit app: Hedging with Options Strategy
+elif page == "HedgingWithOptions":
+    st.title("Hedging with Options Strategy")
+    
+    # Explanation of the Hedging with Options Strategy
+    st.markdown("""
+    In this simulation, we will compare the effectiveness of hedging with a put option strategy. At each option maturity, 
+    we will assess whether exercising the option or exchanging at the spot rate is more advantageous.
+    
+    You can customize the parameters of the simulation, such as the hedge start date, reward frequency, notional reward amount, 
+    and option maturity to visualize how this strategy would have performed.
+    """)
+
+    # Load data from GitHub
+    github_url = 'https://raw.githubusercontent.com/hamza93200/hedging/main/HP.xlsx'
+    try:
+        hp_df = pd.read_excel(github_url)
+    except Exception as e:
+        st.error(f"Failed to load data: {e}")
+
+    st.subheader("Input Parameters")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        start_date = st.date_input("Hedge start date", value=pd.to_datetime("2018-03-01"))
+    with col2:
+        rewards_frequency = st.selectbox("Rewards Frequency", options=['Daily', 'Weekly', 'Monthly'])
+    with col3:
+        asset = st.selectbox("Asset", options=hp_df.columns[1:])
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        reward_amount = st.number_input("Reward Amount in Kind", value=1.0, min_value=0.0)
+    with col2:
+        maturity = st.selectbox("Option Maturity", options=['1w', '1M', '3M', '6M', '12M', '24M', '36M'], index=4)  # Default to '12M'
+
+    strike_price = st.number_input("Strike Price", value=100.0, min_value=0.0)
+    option_premium = st.number_input("Option Premium", value=5.0, min_value=0.0)
+
+    if st.button("Run Hedging Strategy with Options"):
+        with st.spinner("Running hedging strategy simulation..."):
+            maturity_days = convert_maturity_to_days(maturity)
+            df = hp_df[hp_df['Date'] >= pd.to_datetime(start_date)].copy()
+            df['PnL with Options'] = 0.0
+            df['Notional Exchanged'] = 0.0
+            
+            reward_interval = {'Daily': 1, 'Weekly': 7, 'Monthly': 30}[rewards_frequency]
+            cumulative_notional = 0
+            
+            for i in range(0, len(df), reward_interval):
+                if i < len(df):
+                    spot_price = df.loc[df.index[i], asset]
+                    option_payout = max(reward_amount * (strike_price - spot_price), 0)
+                    payout = max(reward_amount * spot_price - option_premium, option_payout)
+                    
+                    # Store the PnL and exchanged notional at this step
+                    df.loc[df.index[i], 'PnL with Options'] = payout
+                    df.loc[df.index[i], 'Notional Exchanged'] = cumulative_notional + payout
+                    
+                    # Update cumulative notional
+                    cumulative_notional += payout
+            
+            final_notional = df['Notional Exchanged'].iloc[-1]
+            st.subheader("Results")
+            st.write(f"**Final accumulated notional with the option strategy:** {final_notional:,.2f} USD")
+            
+            # Plot the results
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot(df['Date'], df['PnL with Options'], label='PnL with Options', color='green')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('PnL (USD)')
+            ax.legend()
+            ax.grid(True)
+            st.pyplot(fig)
