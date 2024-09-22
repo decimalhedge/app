@@ -138,16 +138,6 @@ def plot_results_adjusted(df, asset, rewards_frequency):
     ax.grid(True)
     st.pyplot(fig)
     
-    # Plotting the PnL
-    st.subheader("PnL at Exchange Dates")
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(exchange_dates, pnl_at_exchanges, marker='', linestyle='-', color='green', label='PnL at Exchange')
-    ax.set_xlabel('Date')
-    ax.set_ylabel('PnL (USD)')
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
-
 
 
 def calculate_option_payoff(option_type, is_bought, strike_price, spot_prices, premium):
@@ -211,8 +201,6 @@ if st.sidebar.button("Forward Backtesting"):
     st.experimental_set_query_params(page="ForwardBacktesting")
 if st.sidebar.button("Vanilla Options Payoff Simulator"):
     st.experimental_set_query_params(page="VanillaOptionsPayoffSimulator")
-if st.sidebar.button("Hedging with Options Strategy"):
-    st.experimental_set_query_params(page="HedgingWithOptions")
 
 # Determine which page to show based on the query parameter
 query_params = st.experimental_get_query_params()
@@ -361,107 +349,3 @@ elif page == "VanillaOptionsPayoffSimulator":
     if st.button("Reset All Options"):
         st.session_state.options_data = pd.DataFrame(columns=['Type', 'Position', 'Strike Price', 'Premium', 'Volatility', 'Maturity', 'Risk-Free Rate'])
 
-elif page == "HedgingWithOptions":
-    st.title("Hedging with Options Strategy")
-    
-    # Explanation of the Hedging with Options Strategy
-    st.markdown("""
-    In this simulation, we will compare two strategies: hedging with put options versus exchanging at the spot rate 
-    at each reward date. The put option allows us to lock in a minimum price (the strike price) while paying an upfront premium.
-    
-    By backtesting this strategy on historical data, we can see the outcomes of each approach.
-    """)
-
-    # Load data from GitHub
-    github_url = 'https://raw.githubusercontent.com/hamza93200/hedging/main/HP.xlsx'
-    try:
-        hp_df = pd.read_excel(github_url)
-    except Exception as e:
-        st.error(f"Failed to load data: {e}")
-
-    st.subheader("Input Parameters")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        start_date = st.date_input("Hedge start date", value=pd.to_datetime("2018-03-01"))
-    with col2:
-        rewards_frequency = st.selectbox("Rewards Frequency", options=['Daily', 'Weekly', 'Monthly'])
-    with col3:
-        asset = st.selectbox("Asset", options=hp_df.columns[1:])
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        reward_amount = st.number_input("Reward Amount in Kind", value=1.0, min_value=0.0)
-    with col2:
-        maturity = st.selectbox("Option Maturity", options=['1w', '1M', '3M', '6M', '12M', '24M', '36M'], index=4)  # Default to '12M'
-
-    strike_price = st.number_input("Strike Price", value=100.0, min_value=0.0)
-    option_premium = st.number_input("Option Premium", value=5.0, min_value=0.0)
-
-    if st.button("Run Hedging Strategy with Options"):
-        with st.spinner("Running hedging strategy simulation..."):
-            # Prepare data
-            maturity_days = convert_maturity_to_days(maturity)
-            df = hp_df[hp_df['Date'] >= pd.to_datetime(start_date)].copy()
-            df['PnL with Options'] = 0.0
-            df['PnL without Hedging (Spot)'] = 0.0
-            df['Cumulative Notional (Options)'] = 0.0
-            df['Cumulative Notional (Spot)'] = 0.0
-            
-            reward_interval = {'Daily': 1, 'Weekly': 7, 'Monthly': 30}[rewards_frequency]
-            cumulative_notional_options = 0
-            cumulative_notional_spot = 0
-            
-            # Loop over the data for each reward interval
-            for i in range(0, len(df), reward_interval):
-                if i < len(df):
-                    spot_price = df.loc[df.index[i], asset]
-                    
-                    # Option Strategy: Calculate payout
-                    option_payout = max(reward_amount * (strike_price - spot_price), 0)
-                    payout_with_option = max(reward_amount * spot_price - option_premium, option_payout)
-                    df.loc[df.index[i], 'PnL with Options'] = payout_with_option
-                    cumulative_notional_options += payout_with_option
-                    
-                    # Spot Strategy: Calculate payout without hedging
-                    payout_spot = reward_amount * spot_price
-                    df.loc[df.index[i], 'PnL without Hedging (Spot)'] = payout_spot
-                    cumulative_notional_spot += payout_spot
-                    
-                    # Update cumulative notional values
-                    df.loc[df.index[i], 'Cumulative Notional (Options)'] = cumulative_notional_options
-                    df.loc[df.index[i], 'Cumulative Notional (Spot)'] = cumulative_notional_spot
-            
-            # Calculate final values
-            final_notional_options = df['Cumulative Notional (Options)'].iloc[-1]
-            final_notional_spot = df['Cumulative Notional (Spot)'].iloc[-1]
-            difference = final_notional_options - final_notional_spot
-            returns = (final_notional_options / final_notional_spot - 1) * 100
-            
-            # Display results
-            st.subheader("Results")
-            st.write(f"**Final accumulated notional with the option strategy:** {final_notional_options:,.2f} USD")
-            st.write(f"**Final accumulated notional without hedging (spot strategy):** {final_notional_spot:,.2f} USD")
-            st.write(f"**Difference between options and spot strategies:** {difference:,.2f} USD")
-            st.write(f"**Return of options strategy relative to spot:** {returns:.2f}%")
-            
-            # Plot the results
-            st.subheader("Comparison of Strategies")
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df['Date'], df['Cumulative Notional (Options)'], label='Cumulative Notional (Options)', color='green')
-            ax.plot(df['Date'], df['Cumulative Notional (Spot)'], label='Cumulative Notional (Spot)', color='blue', linestyle='--')
-            ax.set_xlabel('Date')
-            ax.set_ylabel('Cumulative Notional (USD)')
-            ax.legend()
-            ax.grid(True)
-            st.pyplot(fig)
-            
-            # Plot the PnL comparison
-            st.subheader("PnL Comparison at Reward Dates")
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df['Date'], df['PnL with Options'], label='PnL with Options', color='green')
-            ax.plot(df['Date'], df['PnL without Hedging (Spot)'], label='PnL without Hedging (Spot)', color='red', linestyle='--')
-            ax.set_xlabel('Date')
-            ax.set_ylabel('PnL (USD)')
-            ax.legend()
-            ax.grid(True)
-            st.pyplot(fig)
