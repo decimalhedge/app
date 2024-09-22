@@ -233,7 +233,7 @@ elif page == "ForwardBacktesting":
     """)
 
     # Load data from GitHub
-    github_url = 'https://raw.githubusercontent.com/hamza93200/hedging/main/HP.xlsx'
+    github_url = 'https://raw.githubusercontent.com/decimalhedge/app/main/HP.xlsx'
     try:
         hp_df = pd.read_excel(github_url)
     except Exception as e:
